@@ -14,43 +14,51 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// defining the struct for the json
+// struct used for unmarshalling the register request
 type registerRequest struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
+// struct for marhsalling the register response
 type registerResponse struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 }
 
+// struct for unmarshalling the register request
 type loginRequest struct {
 	Identifier string `json:"identifier"`
 	Password   string `json:"password"`
 }
 
+// struct for marshalling the register response
 type loginResponse struct {
 	Token    string `json:"token"`
 	ID       string `json:"id"`
 	Username string `json:"username"`
 }
 
+// Register handler
 func Register(conn *sql.DB) http.HandlerFunc {
+	// the closure function takes a response writer and a pointer to a http request
 	return func(w http.ResponseWriter, r *http.Request) {
+		// defining a data structure for the request so it can be unmarshalled
 		var req registerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 
+		// hashing the password
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			http.Error(w, "could not process password", http.StatusInternalServerError)
 			return
 		}
 
+		// creating a new UUID to insert into the database
 		id := uuid.New().String()
 
 		_, err = conn.Exec(
@@ -59,6 +67,7 @@ func Register(conn *sql.DB) http.HandlerFunc {
 		)
 		if err != nil {
 			var pgErr *pgconn.PgError
+			// Throwing an error if the username or email was already taken
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnprocessableEntity)
