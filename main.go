@@ -46,6 +46,12 @@ func main() {
 	mux.HandleFunc("GET /gallery", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.Gallery(conn)))
 	mux.HandleFunc("GET /notifications", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ListNotifications(conn)))
 	mux.HandleFunc("POST /notifications/{id}/read", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ReadNotification(conn)))
+	mux.HandleFunc(
+		"GET /users/{id}",
+		middleware.RequireAuth(os.Getenv("JWT_SECRET"))(
+			handlers.GetUser(conn),
+		),
+	)
 
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", withCORS(mux)))
