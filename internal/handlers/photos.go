@@ -61,14 +61,20 @@ func UploadPhoto(conn *sql.DB) http.HandlerFunc {
 			http.Error(w, "could not save file", http.StatusInternalServerError)
 			return
 		}
-		defer dest.Close()
 
 		if _, err := io.Copy(dest, file); err != nil {
+			dest.Close()
+			http.Error(w, "could not save file", http.StatusInternalServerError)
+			return
+		}
+
+		if err := dest.Close(); err != nil {
 			http.Error(w, "could not save file", http.StatusInternalServerError)
 			return
 		}
 
 		url := "/uploads/" + eventID + "/" + photoID + ext
+
 		_, err = conn.Exec(
 			`INSERT INTO photos (id, event_id, uploader_id, storage_key) VALUES ($1, $2, $3, $4)`,
 			photoID, eventID, userID, url,
@@ -76,6 +82,18 @@ func UploadPhoto(conn *sql.DB) http.HandlerFunc {
 		if err != nil {
 			http.Error(w, "could not record photo", http.StatusInternalServerError)
 			return
+		}
+
+		// Only the first two photos of an event get thumbnails.
+		if count < 2 {
+			if err := generateThumbnail(destPath); err != nil {
+				http.Error(
+					w,
+					"could not generate photo thumbnail",
+					http.StatusInternalServerError,
+				)
+				return
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

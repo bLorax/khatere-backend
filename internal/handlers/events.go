@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"yadegar/internal/middleware"
 
 	"github.com/google/uuid"
@@ -174,9 +177,14 @@ func GetEvent(conn *sql.DB) http.HandlerFunc {
 		}
 
 		photoRows, err := conn.Query(
-			`SELECT id, event_id, uploader_id, storage_key FROM photos WHERE event_id = $1 ORDER BY created_at`,
+			`SELECT id, event_id, uploader_id, storage_key
+			 FROM photos
+			 WHERE event_id = $1
+			 ORDER BY created_at ASC
+			 LIMIT 2`,
 			eventID,
 		)
+
 		if err != nil {
 			http.Error(w, "could not load photos", http.StatusInternalServerError)
 			return
@@ -184,18 +192,62 @@ func GetEvent(conn *sql.DB) http.HandlerFunc {
 		defer photoRows.Close()
 
 		type photoItem struct {
-			ID         string `json:"id"`
-			EventID    string `json:"event_id"`
-			UploaderID string `json:"uploader_id"`
-			URL        string `json:"url"`
+			ID           string `json:"id"`
+			EventID      string `json:"event_id"`
+			UploaderID   string `json:"uploader_id"`
+			URL          string `json:"url"`
+			ThumbnailURL string `json:"thumbnail_url"`
 		}
+
 		photos := []photoItem{}
+
 		for photoRows.Next() {
 			var p photoItem
-			if err := photoRows.Scan(&p.ID, &p.EventID, &p.UploaderID, &p.URL); err != nil {
+
+			if err := photoRows.Scan(
+				&p.ID,
+				&p.EventID,
+				&p.UploaderID,
+				&p.URL,
+			); err != nil {
 				http.Error(w, "could not load photos", http.StatusInternalServerError)
 				return
 			}
+
+			// storage_key is something like:
+			// /uploads/event-id/photo-id.jpg
+			//
+			// Convert it to a filesystem path:
+			// uploads/event-id/photo-id.jpg
+			sourcePath := strings.TrimPrefix(p.URL, "/")
+
+			ext := filepath.Ext(sourcePath)
+			base := strings.TrimSuffix(sourcePath, ext)
+
+			thumbnailPath := base + "_thumb.jpg"
+
+			// Generate the thumbnail for existing photos if it
+			// doesn't already exist.
+			if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+				if err := generateThumbnail(sourcePath); err != nil {
+					http.Error(
+						w,
+						"could not generate photo thumbnail",
+						http.StatusInternalServerError,
+					)
+					return
+				}
+			} else if err != nil {
+				http.Error(
+					w,
+					"could not check photo thumbnail",
+					http.StatusInternalServerError,
+				)
+				return
+			}
+
+			p.ThumbnailURL = "/" + thumbnailPath
+
 			photos = append(photos, p)
 		}
 

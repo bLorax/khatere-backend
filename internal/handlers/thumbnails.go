@@ -12,6 +12,13 @@ import (
 
 const thumbnailMaxSize = 400
 
+// generateThumbnail creates a 400px-max thumbnail next to the original file.
+//
+// Example:
+//
+// uploads/event-id/photo.jpg
+// becomes
+// uploads/event-id/photo_thumb.jpg
 func generateThumbnail(sourcePath string) error {
 	ext := strings.ToLower(filepath.Ext(sourcePath))
 
@@ -40,8 +47,14 @@ func generateThumbnail(sourcePath string) error {
 
 	thumbnail := resizeImage(img, thumbnailMaxSize)
 
+	// Always save thumbnails as JPEG.
 	base := strings.TrimSuffix(sourcePath, ext)
 	thumbnailPath := base + "_thumb.jpg"
+
+	// Don't regenerate an existing thumbnail.
+	if _, err := os.Stat(thumbnailPath); err == nil {
+		return nil
+	}
 
 	output, err := os.Create(thumbnailPath)
 	if err != nil {
@@ -58,12 +71,15 @@ func generateThumbnail(sourcePath string) error {
 	return nil
 }
 
+// resizeImage scales an image down while preserving its aspect ratio.
+// The longest side will be at most maxSize.
 func resizeImage(src image.Image, maxSize int) image.Image {
 	bounds := src.Bounds()
 
 	width := bounds.Dx()
 	height := bounds.Dy()
 
+	// Don't enlarge small images.
 	if width <= maxSize && height <= maxSize {
 		return src
 	}
