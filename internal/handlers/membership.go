@@ -101,18 +101,36 @@ func ApproveMember(conn *sql.DB) http.HandlerFunc {
 		userID := middleware.UserID(r)
 		memberID := r.PathValue("id")
 
-		result, err := conn.Exec(
-			`UPDATE event_members SET status = 'approved' WHERE id = $1 AND user_id = $2`,
-			memberID, userID,
-		)
+		tx, err := conn.Begin()
 		if err != nil {
-			http.Error(w, "could not approve tag", http.StatusInternalServerError)
+			http.Error(w, "could not start transaction", http.StatusInternalServerError)
+			return
+		}
+		defer tx.Rollback()
+
+		var eventID, taggedBy string
+		err = tx.QueryRow(
+			`UPDATE event_members SET status = 'approved' WHERE id = $1 AND user_id = $2
+			 RETURNING event_id, tagged_by`,
+			memberID, userID,
+		).Scan(&eventID, &taggedBy)
+		if err != nil {
+			http.Error(w, "not your tag to approve", http.StatusForbidden)
 			return
 		}
 
-		affected, err := result.RowsAffected()
-		if err != nil || affected == 0 {
-			http.Error(w, "not your tag to approve", http.StatusForbidden)
+		notifID := uuid.New().String()
+		_, err = tx.Exec(
+			`INSERT INTO notifications (id, user_id, type, event_id, from_user_id) VALUES ($1, $2, 'tag_approved', $3, $4)`,
+			notifID, taggedBy, eventID, userID,
+		)
+		if err != nil {
+			http.Error(w, "could not create notification", http.StatusInternalServerError)
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			http.Error(w, "could not save approval", http.StatusInternalServerError)
 			return
 		}
 
