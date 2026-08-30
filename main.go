@@ -28,6 +28,7 @@ func main() {
 	// Loading the .env file so we don't expose the passwords lol
 	_ = godotenv.Load()
 	connString := os.Getenv("DATABASE_URL")
+	jwtSecret := os.Getenv("JWT_SECRET")
 
 	// connecting to the database
 	conn, err := db.Connect(connString)
@@ -103,22 +104,22 @@ func main() {
 	mux.HandleFunc("GET /health", healthHandler(conn))
 	mux.HandleFunc("POST /register", userHandler.Register)
 	mux.HandleFunc("POST /login", userHandler.Login)
-	mux.HandleFunc("GET /users/search", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(userHandler.SearchUsers))
-	mux.HandleFunc("POST /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.CreateEvent))
-	mux.HandleFunc("GET /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.ListEvents))
-	mux.HandleFunc("GET /events/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.GetEvent))
-	mux.HandleFunc("POST /events/{id}/members", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.TagMember))
-	mux.HandleFunc("POST /event-members/{id}/approve", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.ApproveMember))
-	mux.HandleFunc("POST /event-members/{id}/reject", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.RejectMember))
-	mux.HandleFunc("DELETE /event-members/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.RemoveMember))
+	mux.HandleFunc("GET /users/search", middleware.RequireAuth(jwtSecret)(userHandler.SearchUsers))
+	mux.HandleFunc("POST /events", middleware.RequireAuth(jwtSecret)(eventHandler.CreateEvent))
+	mux.HandleFunc("GET /events", middleware.RequireAuth(jwtSecret)(eventHandler.ListEvents))
+	mux.HandleFunc("GET /events/{id}", middleware.RequireAuth(jwtSecret)(eventHandler.GetEvent))
+	mux.HandleFunc("POST /events/{id}/members", middleware.RequireAuth(jwtSecret)(eventHandler.TagMember))
+	mux.HandleFunc("POST /event-members/{id}/approve", middleware.RequireAuth(jwtSecret)(eventHandler.ApproveMember))
+	mux.HandleFunc("POST /event-members/{id}/reject", middleware.RequireAuth(jwtSecret)(eventHandler.RejectMember))
+	mux.HandleFunc("DELETE /event-members/{id}", middleware.RequireAuth(jwtSecret)(eventHandler.RemoveMember))
 	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
-	mux.HandleFunc("POST /events/{id}/photos", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(photoHandler.UploadPhoto))
-	mux.HandleFunc("GET /gallery", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(galleryHandler.List))
-	mux.HandleFunc("GET /notifications", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(notificationHandler.ListNotifications))
-	mux.HandleFunc("POST /notifications/{id}/read", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(notificationHandler.ReadNotification))
+	mux.HandleFunc("POST /events/{id}/photos", middleware.RequireAuth(jwtSecret)(photoHandler.UploadPhoto))
+	mux.HandleFunc("GET /gallery", middleware.RequireAuth(jwtSecret)(galleryHandler.List))
+	mux.HandleFunc("GET /notifications", middleware.RequireAuth(jwtSecret)(notificationHandler.ListNotifications))
+	mux.HandleFunc("POST /notifications/{id}/read", middleware.RequireAuth(jwtSecret)(notificationHandler.ReadNotification))
 	mux.HandleFunc(
 		"GET /users/{id}",
-		middleware.RequireAuth(os.Getenv("JWT_SECRET"))(
+		middleware.RequireAuth(jwtSecret)(
 			userHandler.GetUser,
 		),
 	)
