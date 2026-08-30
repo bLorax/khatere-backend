@@ -12,14 +12,14 @@ import (
 
 const thumbnailMaxSize = 400
 
-// generateThumbnail creates a 400px-max thumbnail next to the original file.
+// GenerateThumbnail creates a 400px-max thumbnail next to the original file.
 //
 // Example:
 //
 // uploads/event-id/photo.jpg
 // becomes
 // uploads/event-id/photo_thumb.jpg
-func generateThumbnail(sourcePath string) error {
+func GenerateThumbnail(sourcePath string) error {
 	ext := strings.ToLower(filepath.Ext(sourcePath))
 
 	input, err := os.Open(sourcePath)

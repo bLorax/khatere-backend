@@ -7,6 +7,10 @@ import (
 	"os"
 	"strconv"
 	db "yadegar/internal"
+	httpapi "yadegar/internal/adapters/http"
+	pgadapter "yadegar/internal/adapters/postgres"
+	appevent "yadegar/internal/application/event"
+	appuser "yadegar/internal/application/user"
 	"yadegar/internal/handlers"
 	"yadegar/internal/middleware"
 
@@ -28,19 +32,46 @@ func main() {
 
 	log.Println("Connected to database successfully")
 
+	// --- Auth domain wiring (Clean/Hexagonal Architecture) ---
+	// The adapter implements the domain port.
+	userRepo := pgadapter.NewUserRepository(conn)
+	// Each use case takes the port, not the adapter. The use case does not
+	// know that Postgres exists.
+	registerUC := appuser.NewRegisterUseCase(userRepo)
+	loginUC := appuser.NewLoginUseCase(userRepo)
+	// The HTTP handler takes the use cases.
+	userHandler := httpapi.NewUserHandler(registerUC, loginUC)
+
+	// --- Event domain wiring (Clean/Hexagonal Architecture) ---
+	eventRepo := pgadapter.NewEventRepository(conn)
+	eventNotifier := pgadapter.NewEventNotifier(conn)
+	createEventUC := appevent.NewCreateEventUseCase(eventRepo)
+	listEventsUC := appevent.NewListEventsUseCase(eventRepo)
+	getEventUC := appevent.NewGetEventUseCase(eventRepo)
+	tagMemberUC := appevent.NewTagMemberUseCase(eventRepo, eventNotifier)
+	approveMemberUC := appevent.NewApproveMemberUseCase(eventRepo, eventNotifier)
+	rejectMemberUC := appevent.NewRejectMemberUseCase(eventRepo, eventNotifier)
+	removeMemberUC := appevent.NewRemoveMemberUseCase(eventRepo)
+	// photoDB is a temporary dependency. See EventHandler's doc comment.
+	eventHandler := httpapi.NewEventHandler(
+		createEventUC, listEventsUC, getEventUC,
+		tagMemberUC, approveMemberUC, rejectMemberUC, removeMemberUC,
+		conn,
+	)
+
 	// http handlers go here
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler(conn))
-	mux.HandleFunc("POST /register", handlers.Register(conn))
-	mux.HandleFunc("POST /login", handlers.Login(conn))
+	mux.HandleFunc("POST /register", userHandler.Register)
+	mux.HandleFunc("POST /login", userHandler.Login)
 	mux.HandleFunc("GET /users/search", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.SearchUsers(conn)))
-	mux.HandleFunc("POST /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.CreateEvent(conn)))
-	mux.HandleFunc("GET /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ListEvents(conn)))
-	mux.HandleFunc("GET /events/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.GetEvent(conn)))
-	mux.HandleFunc("POST /events/{id}/members", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.TagMember(conn)))
-	mux.HandleFunc("POST /event-members/{id}/approve", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ApproveMember(conn)))
-	mux.HandleFunc("POST /event-members/{id}/reject", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.RejectMember(conn)))
-	mux.HandleFunc("DELETE /event-members/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.RemoveMember(conn)))
+	mux.HandleFunc("POST /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.CreateEvent))
+	mux.HandleFunc("GET /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.ListEvents))
+	mux.HandleFunc("GET /events/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.GetEvent))
+	mux.HandleFunc("POST /events/{id}/members", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.TagMember))
+	mux.HandleFunc("POST /event-members/{id}/approve", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.ApproveMember))
+	mux.HandleFunc("POST /event-members/{id}/reject", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.RejectMember))
+	mux.HandleFunc("DELETE /event-members/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.RemoveMember))
 	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
 	mux.HandleFunc("POST /events/{id}/photos", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.UploadPhoto(conn)))
 	mux.HandleFunc("GET /gallery", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.Gallery(conn)))

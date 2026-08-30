@@ -86,7 +86,7 @@ func UploadPhoto(conn *sql.DB) http.HandlerFunc {
 
 		// Only the first two photos of an event get thumbnails.
 		if count < 2 {
-			if err := generateThumbnail(destPath); err != nil {
+			if err := GenerateThumbnail(destPath); err != nil {
 				http.Error(
 					w,
 					"could not generate photo thumbnail",
