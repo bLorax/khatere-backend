@@ -2,39 +2,36 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 
-	"github.com/google/uuid"
+	domainnotif "yadegar/internal/domain/notification"
 )
 
-// EventNotifier implements domainevent.Notifier with a direct insert into
-// the notifications table. This is a temporary adapter. A later step can
-// add a Kafka-based adapter that publishes an event instead, without any
-// change to the application layer that calls this port.
+// EventNotifier implements domainevent.Notifier. EventNotifier delegates
+// every write to NotificationRepository, so the notifications table has
+// one owner. A later step can add a Kafka-based adapter instead, with no
+// change to the Event application layer that calls this port.
 type EventNotifier struct {
-	conn *sql.DB
+	notifications domainnotif.Repository
 }
 
-func NewEventNotifier(conn *sql.DB) *EventNotifier {
-	return &EventNotifier{conn: conn}
+func NewEventNotifier(notifications domainnotif.Repository) *EventNotifier {
+	return &EventNotifier{notifications: notifications}
 }
 
 func (n *EventNotifier) NotifyTagRequest(ctx context.Context, toUserID, eventID, fromUserID string) error {
-	return n.insert(ctx, toUserID, "tag_request", eventID, fromUserID)
+	return n.create(ctx, toUserID, domainnotif.TypeTagRequest, eventID, fromUserID)
 }
 
 func (n *EventNotifier) NotifyTagApproved(ctx context.Context, toUserID, eventID, fromUserID string) error {
-	return n.insert(ctx, toUserID, "tag_approved", eventID, fromUserID)
+	return n.create(ctx, toUserID, domainnotif.TypeTagApproved, eventID, fromUserID)
 }
 
 func (n *EventNotifier) NotifyTagRejected(ctx context.Context, toUserID, eventID, fromUserID string) error {
-	return n.insert(ctx, toUserID, "tag_rejected", eventID, fromUserID)
+	return n.create(ctx, toUserID, domainnotif.TypeTagRejected, eventID, fromUserID)
 }
 
-func (n *EventNotifier) insert(ctx context.Context, toUserID, notifType, eventID, fromUserID string) error {
-	_, err := n.conn.ExecContext(ctx,
-		`INSERT INTO notifications (id, user_id, type, event_id, from_user_id) VALUES ($1, $2, $3, $4, $5)`,
-		uuid.New().String(), toUserID, notifType, eventID, fromUserID,
-	)
-	return err
+func (n *EventNotifier) create(ctx context.Context, toUserID, notifType, eventID, fromUserID string) error {
+	return n.notifications.Create(ctx, &domainnotif.Notification{
+		UserID: toUserID, Type: notifType, EventID: eventID, FromUserID: fromUserID,
+	})
 }

@@ -8,4 +8,6 @@ import "context"
 type Repository interface {
 	Create(ctx context.Context, u *User) error
 	FindByIdentifier(ctx context.Context, identifier string) (*User, error)
+	Search(ctx context.Context, query string, limit int) ([]User, error)
+	Get(ctx context.Context, id string) (*User, error)
 }

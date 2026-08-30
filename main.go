@@ -12,9 +12,10 @@ import (
 	httpapi "yadegar/internal/adapters/http"
 	pgadapter "yadegar/internal/adapters/postgres"
 	appevent "yadegar/internal/application/event"
+	appgallery "yadegar/internal/application/gallery"
+	appnotif "yadegar/internal/application/notification"
 	appphoto "yadegar/internal/application/photo"
 	appuser "yadegar/internal/application/user"
-	"yadegar/internal/handlers"
 	"yadegar/internal/middleware"
 	"yadegar/internal/telemetry"
 
@@ -55,12 +56,15 @@ func main() {
 	// know that Postgres exists.
 	registerUC := appuser.NewRegisterUseCase(userRepo)
 	loginUC := appuser.NewLoginUseCase(userRepo)
+	searchUsersUC := appuser.NewSearchUsersUseCase(userRepo)
+	getUserUC := appuser.NewGetUserUseCase(userRepo)
 	// The HTTP handler takes the use cases.
-	userHandler := httpapi.NewUserHandler(registerUC, loginUC)
+	userHandler := httpapi.NewUserHandler(registerUC, loginUC, searchUsersUC, getUserUC)
 
 	// --- Event domain wiring (Clean/Hexagonal Architecture) ---
 	eventRepo := pgadapter.NewEventRepository(conn)
-	eventNotifier := pgadapter.NewEventNotifier(conn)
+	notifRepo := pgadapter.NewNotificationRepository(conn)
+	eventNotifier := pgadapter.NewEventNotifier(notifRepo)
 	createEventUC := appevent.NewCreateEventUseCase(eventRepo)
 	listEventsUC := appevent.NewListEventsUseCase(eventRepo)
 	getEventUC := appevent.NewGetEventUseCase(eventRepo)
@@ -78,6 +82,16 @@ func main() {
 	listEventPhotosUC := appphoto.NewListEventPhotosUseCase(photoRepo, photoStorage)
 	photoHandler := httpapi.NewPhotoHandler(uploadPhotoUC)
 
+	// --- Notification domain wiring (Clean/Hexagonal Architecture) ---
+	listNotificationsUC := appnotif.NewListNotificationsUseCase(notifRepo)
+	readNotificationUC := appnotif.NewReadNotificationUseCase(notifRepo)
+	notificationHandler := httpapi.NewNotificationHandler(listNotificationsUC, readNotificationUC)
+
+	// --- Gallery read-model wiring (Clean/Hexagonal Architecture) ---
+	galleryRepo := pgadapter.NewGalleryRepository(conn)
+	listGalleryUC := appgallery.NewListGalleryUseCase(galleryRepo)
+	galleryHandler := httpapi.NewGalleryHandler(listGalleryUC)
+
 	eventHandler := httpapi.NewEventHandler(
 		createEventUC, listEventsUC, getEventUC,
 		tagMemberUC, approveMemberUC, rejectMemberUC, removeMemberUC,
@@ -89,7 +103,7 @@ func main() {
 	mux.HandleFunc("GET /health", healthHandler(conn))
 	mux.HandleFunc("POST /register", userHandler.Register)
 	mux.HandleFunc("POST /login", userHandler.Login)
-	mux.HandleFunc("GET /users/search", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.SearchUsers(conn)))
+	mux.HandleFunc("GET /users/search", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(userHandler.SearchUsers))
 	mux.HandleFunc("POST /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.CreateEvent))
 	mux.HandleFunc("GET /events", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.ListEvents))
 	mux.HandleFunc("GET /events/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.GetEvent))
@@ -99,13 +113,13 @@ func main() {
 	mux.HandleFunc("DELETE /event-members/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.RemoveMember))
 	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
 	mux.HandleFunc("POST /events/{id}/photos", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(photoHandler.UploadPhoto))
-	mux.HandleFunc("GET /gallery", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.Gallery(conn)))
-	mux.HandleFunc("GET /notifications", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ListNotifications(conn)))
-	mux.HandleFunc("POST /notifications/{id}/read", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ReadNotification(conn)))
+	mux.HandleFunc("GET /gallery", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(galleryHandler.List))
+	mux.HandleFunc("GET /notifications", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(notificationHandler.ListNotifications))
+	mux.HandleFunc("POST /notifications/{id}/read", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(notificationHandler.ReadNotification))
 	mux.HandleFunc(
 		"GET /users/{id}",
 		middleware.RequireAuth(os.Getenv("JWT_SECRET"))(
-			handlers.GetUser(conn),
+			userHandler.GetUser,
 		),
 	)
 

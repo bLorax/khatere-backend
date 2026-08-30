@@ -34,14 +34,26 @@ type loginResponse struct {
 	Username string `json:"username"`
 }
 
+type userSearchResult struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+type userResponse struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
 // UserHandler wires HTTP routes to user use cases.
 type UserHandler struct {
 	register *appuser.RegisterUseCase
 	login    *appuser.LoginUseCase
+	search   *appuser.SearchUsersUseCase
+	get      *appuser.GetUserUseCase
 }
 
-func NewUserHandler(register *appuser.RegisterUseCase, login *appuser.LoginUseCase) *UserHandler {
-	return &UserHandler{register: register, login: login}
+func NewUserHandler(register *appuser.RegisterUseCase, login *appuser.LoginUseCase, search *appuser.SearchUsersUseCase, get *appuser.GetUserUseCase) *UserHandler {
+	return &UserHandler{register: register, login: login, search: search, get: get}
 }
 
 func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -93,4 +105,40 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(loginResponse{Token: out.Token, ID: out.ID, Username: out.Username})
+}
+
+func (h *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+
+	users, err := h.search.Execute(r.Context(), q)
+	if err != nil {
+		http.Error(w, "search failed", http.StatusInternalServerError)
+		return
+	}
+
+	results := make([]userSearchResult, 0, len(users))
+	for _, u := range users {
+		results = append(results, userSearchResult{ID: u.ID, Username: u.Username})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{"results": results})
+}
+
+func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	u, err := h.get.Execute(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, domainuser.ErrNotFound) {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "could not load user", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(userResponse{ID: u.ID, Username: u.Username})
 }

@@ -51,3 +51,39 @@ func (r *UserRepository) FindByIdentifier(ctx context.Context, identifier string
 	}
 	return &u, nil
 }
+
+func (r *UserRepository) Search(ctx context.Context, query string, limit int) ([]domainuser.User, error) {
+	rows, err := r.conn.QueryContext(ctx,
+		`SELECT id, username FROM users WHERE username ILIKE '%' || $1 || '%' ORDER BY username LIMIT $2`,
+		query, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := []domainuser.User{}
+	for rows.Next() {
+		var u domainuser.User
+		if err := rows.Scan(&u.ID, &u.Username); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+func (r *UserRepository) Get(ctx context.Context, id string) (*domainuser.User, error) {
+	var u domainuser.User
+	err := r.conn.QueryRowContext(ctx,
+		`SELECT id, username FROM users WHERE id = $1`,
+		id,
+	).Scan(&u.ID, &u.Username)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domainuser.ErrNotFound
+		}
+		return nil, err
+	}
+	return &u, nil
+}
