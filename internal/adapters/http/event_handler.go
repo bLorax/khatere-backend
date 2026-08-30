@@ -5,16 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 
 	appevent "yadegar/internal/application/event"
+	appphoto "yadegar/internal/application/photo"
 	domainevent "yadegar/internal/domain/event"
-	"yadegar/internal/handlers"
 	"yadegar/internal/middleware"
-
-	"database/sql"
 )
 
 type createEventRequest struct {
@@ -40,21 +35,15 @@ type eventDetailMember struct {
 }
 
 // EventHandler wires HTTP routes to Event use cases.
-//
-// photoDB is a TEMPORARY dependency. The GetEvent route still attaches
-// recent photos and thumbnails to its response. Photo loading belongs to
-// a future Photo domain step. Until that step, this handler queries
-// photos directly, the same way the old handler did. Remove photoDB once
-// the Photo domain exists.
 type EventHandler struct {
-	create  *appevent.CreateEventUseCase
-	list    *appevent.ListEventsUseCase
-	get     *appevent.GetEventUseCase
-	tag     *appevent.TagMemberUseCase
-	approve *appevent.ApproveMemberUseCase
-	reject  *appevent.RejectMemberUseCase
-	remove  *appevent.RemoveMemberUseCase
-	photoDB *sql.DB
+	create     *appevent.CreateEventUseCase
+	list       *appevent.ListEventsUseCase
+	get        *appevent.GetEventUseCase
+	tag        *appevent.TagMemberUseCase
+	approve    *appevent.ApproveMemberUseCase
+	reject     *appevent.RejectMemberUseCase
+	remove     *appevent.RemoveMemberUseCase
+	listPhotos *appphoto.ListEventPhotosUseCase
 }
 
 func NewEventHandler(
@@ -65,12 +54,12 @@ func NewEventHandler(
 	approve *appevent.ApproveMemberUseCase,
 	reject *appevent.RejectMemberUseCase,
 	remove *appevent.RemoveMemberUseCase,
-	photoDB *sql.DB,
+	listPhotos *appphoto.ListEventPhotosUseCase,
 ) *EventHandler {
 	return &EventHandler{
 		create: create, list: list, get: get,
 		tag: tag, approve: approve, reject: reject, remove: remove,
-		photoDB: photoDB,
+		listPhotos: listPhotos,
 	}
 }
 
@@ -134,10 +123,18 @@ func (h *EventHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	photos, err := h.loadPhotosWithThumbnails(eventID)
+	photosOut, err := h.listPhotos.Execute(r.Context(), eventID)
 	if err != nil {
 		http.Error(w, "could not load photos", http.StatusInternalServerError)
 		return
+	}
+
+	photos := make([]photoItem, 0, len(photosOut))
+	for _, p := range photosOut {
+		photos = append(photos, photoItem{
+			ID: p.ID, EventID: p.EventID, UploaderID: p.UploaderID,
+			URL: p.URL, ThumbnailURL: p.ThumbnailURL,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -155,49 +152,6 @@ type photoItem struct {
 	UploaderID   string `json:"uploader_id"`
 	URL          string `json:"url"`
 	ThumbnailURL string `json:"thumbnail_url"`
-}
-
-// loadPhotosWithThumbnails is a TEMPORARY bridge. It carries the same
-// behavior as the old handler. A future Photo domain step replaces this
-// method with a proper application/photo use case.
-func (h *EventHandler) loadPhotosWithThumbnails(eventID string) ([]photoItem, error) {
-	rows, err := h.photoDB.Query(
-		`SELECT id, event_id, uploader_id, storage_key
-		 FROM photos
-		 WHERE event_id = $1
-		 ORDER BY created_at ASC
-		 LIMIT 2`,
-		eventID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	photos := []photoItem{}
-	for rows.Next() {
-		var p photoItem
-		if err := rows.Scan(&p.ID, &p.EventID, &p.UploaderID, &p.URL); err != nil {
-			return nil, err
-		}
-
-		sourcePath := strings.TrimPrefix(p.URL, "/")
-		ext := filepath.Ext(sourcePath)
-		base := strings.TrimSuffix(sourcePath, ext)
-		thumbnailPath := base + "_thumb.jpg"
-
-		if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
-			if err := handlers.GenerateThumbnail(sourcePath); err != nil {
-				return nil, err
-			}
-		} else if err != nil {
-			return nil, err
-		}
-
-		p.ThumbnailURL = "/" + thumbnailPath
-		photos = append(photos, p)
-	}
-	return photos, rows.Err()
 }
 
 // --- Membership routes ---

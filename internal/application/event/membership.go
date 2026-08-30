@@ -73,7 +73,7 @@ func NewApproveMemberUseCase(repo domainevent.Repository, notifier domainevent.N
 func (uc *ApproveMemberUseCase) Execute(ctx context.Context, memberID, userID string) error {
 	eventID, taggedBy, err := uc.repo.ApproveMember(ctx, memberID, userID)
 	if err != nil {
-		return domainevent.ErrForbidden
+		return err
 	}
 	return uc.notifier.NotifyTagApproved(ctx, taggedBy, eventID, userID)
 }
@@ -91,8 +91,9 @@ func NewRejectMemberUseCase(repo domainevent.Repository, notifier domainevent.No
 func (uc *RejectMemberUseCase) Execute(ctx context.Context, memberID, userID string) error {
 	eventID, taggedBy, err := uc.repo.RejectMember(ctx, memberID, userID)
 	if err != nil {
-		return domainevent.ErrForbidden
+		return err
 	}
+
 	return uc.notifier.NotifyTagRejected(ctx, taggedBy, eventID, userID)
 }
 
@@ -108,7 +109,8 @@ func NewRemoveMemberUseCase(repo domainevent.Repository) *RemoveMemberUseCase {
 
 func (uc *RemoveMemberUseCase) Execute(ctx context.Context, memberID, userID string) error {
 	if err := uc.repo.RemoveMember(ctx, memberID, userID); err != nil {
-		return domainevent.ErrForbidden
+		return err
 	}
+
 	return nil
 }

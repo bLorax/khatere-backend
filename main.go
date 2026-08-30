@@ -7,9 +7,11 @@ import (
 	"os"
 	"strconv"
 	db "yadegar/internal"
+	fsadapter "yadegar/internal/adapters/filesystem"
 	httpapi "yadegar/internal/adapters/http"
 	pgadapter "yadegar/internal/adapters/postgres"
 	appevent "yadegar/internal/application/event"
+	appphoto "yadegar/internal/application/photo"
 	appuser "yadegar/internal/application/user"
 	"yadegar/internal/handlers"
 	"yadegar/internal/middleware"
@@ -52,11 +54,20 @@ func main() {
 	approveMemberUC := appevent.NewApproveMemberUseCase(eventRepo, eventNotifier)
 	rejectMemberUC := appevent.NewRejectMemberUseCase(eventRepo, eventNotifier)
 	removeMemberUC := appevent.NewRemoveMemberUseCase(eventRepo)
-	// photoDB is a temporary dependency. See EventHandler's doc comment.
+
+	// --- Photo domain wiring (Clean/Hexagonal Architecture) ---
+	photoRepo := pgadapter.NewPhotoRepository(conn)
+	photoStorage := fsadapter.NewPhotoStorage("uploads")
+	// eventRepo already implements IsApprovedMember, so it satisfies
+	// domainphoto.MembershipChecker with no extra adapter code.
+	uploadPhotoUC := appphoto.NewUploadPhotoUseCase(photoRepo, photoStorage, eventRepo)
+	listEventPhotosUC := appphoto.NewListEventPhotosUseCase(photoRepo, photoStorage)
+	photoHandler := httpapi.NewPhotoHandler(uploadPhotoUC)
+
 	eventHandler := httpapi.NewEventHandler(
 		createEventUC, listEventsUC, getEventUC,
 		tagMemberUC, approveMemberUC, rejectMemberUC, removeMemberUC,
-		conn,
+		listEventPhotosUC,
 	)
 
 	// http handlers go here
@@ -73,7 +84,7 @@ func main() {
 	mux.HandleFunc("POST /event-members/{id}/reject", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.RejectMember))
 	mux.HandleFunc("DELETE /event-members/{id}", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(eventHandler.RemoveMember))
 	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
-	mux.HandleFunc("POST /events/{id}/photos", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.UploadPhoto(conn)))
+	mux.HandleFunc("POST /events/{id}/photos", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(photoHandler.UploadPhoto))
 	mux.HandleFunc("GET /gallery", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.Gallery(conn)))
 	mux.HandleFunc("GET /notifications", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ListNotifications(conn)))
 	mux.HandleFunc("POST /notifications/{id}/read", middleware.RequireAuth(os.Getenv("JWT_SECRET"))(handlers.ReadNotification(conn)))
