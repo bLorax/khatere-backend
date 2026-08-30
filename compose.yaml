@@ -28,10 +28,20 @@ services:
     environment:
       DATABASE_URL: postgres://yadegar_user:yadegar_user@postgres:5432/yadegar?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     ports:
       - "8080:8080"
     volumes:
       - ./uploads:/app/uploads
+
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    container_name: khatere-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "4318:4318"
 
 volumes:
   postgres_data:

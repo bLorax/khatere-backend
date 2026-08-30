@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -15,8 +16,10 @@ import (
 	appuser "yadegar/internal/application/user"
 	"yadegar/internal/handlers"
 	"yadegar/internal/middleware"
+	"yadegar/internal/telemetry"
 
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
@@ -34,6 +37,17 @@ func main() {
 
 	log.Println("Connected to database successfully")
 
+	ctx := context.Background()
+
+	otelShutdown, err := telemetry.Init(ctx)
+	if err != nil {
+		log.Fatalf("failed to initialize OpenTelemetry: %v", err)
+	}
+	defer func() {
+		if err := otelShutdown(context.Background()); err != nil {
+			log.Printf("failed to shutdown OpenTelemetry: %v", err)
+		}
+	}()
 	// --- Auth domain wiring (Clean/Hexagonal Architecture) ---
 	// The adapter implements the domain port.
 	userRepo := pgadapter.NewUserRepository(conn)
@@ -96,7 +110,10 @@ func main() {
 	)
 
 	log.Println("listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", withCORS(mux)))
+
+	handler := otelhttp.NewHandler(withCORS(mux), "khatere-http")
+
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }
 
 // just a test function with a closure
