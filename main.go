@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -205,6 +206,18 @@ func main() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server error: %v", err)
 		}
+	}()
+
+	// Separate debug server, NOT the public mux. Never publish this port
+	// in compose.yaml the way 8080 is — pprof exposes goroutine stacks
+	// and memory internals to anyone who can reach it.
+	go func() {
+		debugMux := http.NewServeMux()
+		debugMux.HandleFunc("/debug/pprof/", pprof.Index)
+		debugMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		debugMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		log.Println("pprof listening on :6060 (internal only)")
+		log.Println(http.ListenAndServe("127.0.0.1:6060", debugMux))
 	}()
 
 	// Wait for SIGINT (Ctrl+C) or SIGTERM (e.g. from Docker/Kubernetes).
