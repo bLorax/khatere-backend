@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/crypto/bcrypt"
 
 	domainuser "yadegar/internal/domain/user"
+	"yadegar/internal/telemetry"
 )
 
 // LoginUseCase checks credentials and issues a JWT.
@@ -33,8 +35,10 @@ type LoginOutput struct {
 	Username string
 }
 
-// Execute runs the login use case.
 func (uc *LoginUseCase) Execute(ctx context.Context, in LoginInput) (*LoginOutput, error) {
+	ctx, span := telemetry.Tracer().Start(ctx, "LoginUseCase.Execute")
+	defer span.End()
+
 	u, err := uc.repo.FindByIdentifier(ctx, in.Identifier)
 	if err != nil {
 		// Return one generic error for "not found" and "wrong password".
@@ -56,6 +60,8 @@ func (uc *LoginUseCase) Execute(ctx context.Context, in LoginInput) (*LoginOutpu
 	// change small and focused on layering.
 	signed, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 

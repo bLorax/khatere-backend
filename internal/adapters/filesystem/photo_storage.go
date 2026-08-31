@@ -3,16 +3,13 @@ package filesystem
 
 import (
 	"fmt"
-	"image"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-)
 
-const thumbnailMaxSize = 400
+	"yadegar/internal/imaging"
+)
 
 // PhotoStorage implements domainphoto.Storage with the local filesystem.
 // baseDir is the directory files are written under, e.g. "uploads".
@@ -66,83 +63,30 @@ func (s *PhotoStorage) EnsureThumbnail(url string) (string, error) {
 		return "", fmt.Errorf("check thumbnail: %w", err)
 	}
 
-	if err := generateThumbnail(sourcePath, thumbnailPath, ext); err != nil {
+	input, err := os.Open(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("open image: %w", err)
+	}
+	img, err := imaging.Decode(ext, input)
+	input.Close()
+	if err != nil {
+		return "", fmt.Errorf("decode image: %w", err)
+	}
+
+	thumbBytes, err := imaging.Thumbnail(img)
+	if err != nil {
 		return "", err
+	}
+
+	if err := os.WriteFile(thumbnailPath, thumbBytes, 0o644); err != nil {
+		return "", fmt.Errorf("write thumbnail: %w", err)
 	}
 
 	return "/" + thumbnailPath, nil
 }
 
-// generateThumbnail decodes the image at sourcePath, resizes it, and
-// writes it to thumbnailPath as JPEG. This is the same logic the old
-// internal/handlers/thumbnails.go used; it now lives here because
-// building a thumbnail is a filesystem-and-image-codec concern, which
-// belongs in an adapter, not in application or domain code.
-func generateThumbnail(sourcePath, thumbnailPath, ext string) error {
-	input, err := os.Open(sourcePath)
-	if err != nil {
-		return fmt.Errorf("open image: %w", err)
-	}
-	defer input.Close()
-
-	var img image.Image
-	switch ext {
-	case ".jpg", ".jpeg":
-		img, err = jpeg.Decode(input)
-	case ".png":
-		img, err = png.Decode(input)
-	default:
-		return fmt.Errorf("unsupported image type: %s", ext)
-	}
-	if err != nil {
-		return fmt.Errorf("decode image: %w", err)
-	}
-
-	thumbnail := resizeImage(img, thumbnailMaxSize)
-
-	output, err := os.Create(thumbnailPath)
-	if err != nil {
-		return fmt.Errorf("create thumbnail: %w", err)
-	}
-	defer output.Close()
-
-	if err := jpeg.Encode(output, thumbnail, &jpeg.Options{Quality: 80}); err != nil {
-		return fmt.Errorf("encode thumbnail: %w", err)
-	}
-
-	return nil
-}
-
-// resizeImage scales an image down while preserving its aspect ratio.
-// The longest side will be at most maxSize.
-func resizeImage(src image.Image, maxSize int) image.Image {
-	bounds := src.Bounds()
-
-	width := bounds.Dx()
-	height := bounds.Dy()
-
-	// Don't enlarge small images.
-	if width <= maxSize && height <= maxSize {
-		return src
-	}
-
-	scale := float64(maxSize) / float64(width)
-	if height > width {
-		scale = float64(maxSize) / float64(height)
-	}
-
-	newWidth := int(float64(width) * scale)
-	newHeight := int(float64(height) * scale)
-
-	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
-
-	for y := 0; y < newHeight; y++ {
-		for x := 0; x < newWidth; x++ {
-			srcX := bounds.Min.X + int(float64(x)*float64(width)/float64(newWidth))
-			srcY := bounds.Min.Y + int(float64(y)*float64(height)/float64(newHeight))
-			dst.Set(x, y, src.At(srcX, srcY))
-		}
-	}
-
-	return dst
+// PublicURL is the identity function for local disk: the key already IS
+// the servable path (served by the app's static file route).
+func (s *PhotoStorage) PublicURL(key string) (string, error) {
+	return key, nil
 }

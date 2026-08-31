@@ -63,7 +63,7 @@ CREATE TABLE public.notifications (
     from_user_id uuid NOT NULL,
     read boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notifications_type_check CHECK ((type = ANY (ARRAY['tag_request'::text, 'tag_rejected'::text, 'tag_approved'::text])))
+    CONSTRAINT notifications_type_check CHECK ((type = ANY (ARRAY['tag_request'::text, 'tag_rejected'::text, 'tag_approved'::text, 'photo_uploaded'::text])))
 );
 
 
@@ -91,6 +91,17 @@ CREATE TABLE public.users (
     password_hash text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+CREATE TABLE outbox (
+    id UUID PRIMARY KEY,
+    topic TEXT NOT NULL,
+    key TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone
+);
+
+CREATE INDEX outbox_unpublished_idx ON outbox (created_at) WHERE published_at IS NULL;
 
 
 --
@@ -226,4 +237,3 @@ ALTER TABLE ONLY public.photos
 --
 
 \unrestrict qAhGkZYaDVJeyKHP45neOc8XoHEjmTf7hmzYMoGhaKVdEc0q2LXYUYSd6422JDb
-

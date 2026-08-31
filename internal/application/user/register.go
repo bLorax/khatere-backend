@@ -6,10 +6,12 @@ package user
 import (
 	"context"
 
-	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
-
 	domainuser "yadegar/internal/domain/user"
+	"yadegar/internal/telemetry"
+
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // RegisterUseCase creates a new user account.
@@ -30,10 +32,14 @@ type RegisterInput struct {
 	Password string
 }
 
-// Execute runs the register use case.
 func (uc *RegisterUseCase) Execute(ctx context.Context, in RegisterInput) (*domainuser.User, error) {
+	ctx, span := telemetry.Tracer().Start(ctx, "RegisterUseCase.Execute")
+	defer span.End()
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
@@ -45,6 +51,8 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, in RegisterInput) (*doma
 	}
 
 	if err := uc.repo.Create(ctx, u); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 

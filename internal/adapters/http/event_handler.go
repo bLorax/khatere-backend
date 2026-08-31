@@ -123,14 +123,8 @@ func (h *EventHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	photosOut, err := h.listPhotos.Execute(r.Context(), eventID)
-	if err != nil {
-		http.Error(w, "could not load photos", http.StatusInternalServerError)
-		return
-	}
-
-	photos := make([]photoItem, 0, len(photosOut))
-	for _, p := range photosOut {
+	photos := make([]photoItem, 0, len(out.Photos))
+	for _, p := range out.Photos {
 		photos = append(photos, photoItem{
 			ID: p.ID, EventID: p.EventID, UploaderID: p.UploaderID,
 			URL: p.URL, ThumbnailURL: p.ThumbnailURL,

@@ -42,5 +42,5 @@ type Repository interface {
 
 	// RemoveMember deletes an approved Member row. Only the member
 	// themselves can remove their own membership.
-	RemoveMember(ctx context.Context, memberID, userID string) error
+	RemoveMember(ctx context.Context, memberID, userID string) (eventID string, err error)
 }

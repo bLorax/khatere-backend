@@ -19,7 +19,8 @@ type Notification struct {
 }
 
 const (
-	TypeTagRequest  = "tag_request"
-	TypeTagApproved = "tag_approved"
-	TypeTagRejected = "tag_rejected"
+	TypeTagRequest    = "tag_request"
+	TypeTagApproved   = "tag_approved"
+	TypeTagRejected   = "tag_rejected"
+	TypePhotoUploaded = "photo_uploaded"
 )
