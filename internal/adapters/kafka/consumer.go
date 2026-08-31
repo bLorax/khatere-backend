@@ -39,9 +39,21 @@ func NewNotificationConsumer(brokers []string, groupID string, repo domainnotif.
 
 	readers := make([]*kafka.Reader, 0, len(topics))
 	for _, topic := range topics {
+		// Each reader gets its OWN group id (groupID + topic), not the
+		// shared groupID. Kafka's consumer-group protocol expects every
+		// member of a group to agree on what it's subscribed to — 4
+		// readers sharing one group ID, each subscribed to a different
+		// single topic, look like constantly-conflicting membership to
+		// the coordinator, which triggers repeated rebalancing. During a
+		// rebalance, consumption on that group pauses entirely, which is
+		// what caused multi-second (sometimes far longer) delays between
+		// an action happening and its notification actually being
+		// written. Giving each topic its own group makes each reader the
+		// sole, stable member of its own group — no shared subscription,
+		// no thrashing.
 		readers = append(readers, kafka.NewReader(kafka.ReaderConfig{
 			Brokers: brokers,
-			GroupID: groupID,
+			GroupID: groupID + "-" + topic,
 			Topic:   topic,
 		}))
 	}
